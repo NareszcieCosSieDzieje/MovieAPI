@@ -1,0 +1,87 @@
+version: '3'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: ./Backend.Dockerfile
+      args:
+        environment: dev
+        status: stable
+    expose:
+      - 8000
+    volumes:
+      - dbdata:/home/app/database:rw
+      - static_volume:/home/app/static:rw
+    command: gunicorn MovieApi.wsgi:application --bind 0.0.0.0:8000
+    env_file:
+      - ./env/django.env
+      - ./env/celery.env
+      - ./env/imdb.env
+      - ./env/vm.env
+    depends_on:
+      - redis
+  redis:
+    image: redis:alpine
+  celery:
+    build:
+      context: .
+      dockerfile: ./Backend.Dockerfile
+    command: celery -A MovieApi worker -l info
+    volumes:
+      - dbdata:/home/app/database:rw
+    env_file:
+      - ./env/django.env
+      - ./env/celery.env
+      - ./env/imdb.env
+      - ./env/vm.env
+    depends_on:
+      - redis
+  celery-beat:
+    build:
+      context: .
+      dockerfile: ./Backend.Dockerfile
+    command: celery -A MovieApi beat -l info
+    env_file:
+      - ./env/django.env
+      - ./env/celery.env
+      - ./env/imdb.env
+      - ./env/vm.env
+    depends_on:
+      - redis
+  nginx-proxy:
+    container_name: nginx-proxy
+    build: ./nginx
+    restart: always
+    ports:
+      - 443:443
+      - 80:80
+    volumes:
+      - dbdata:/home/app/database # TODO POTRZEBNE?
+      - static_volume:/home/app/static
+
+      - certs:/etc/nginx/certs
+      - html:/usr/share/nginx/html
+      - vhost:/etc/nginx/vhost.d
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    depends_on:
+      - backend
+  nginx-proxy-letsencrypt:
+      image: jrcs/letsencrypt-nginx-proxy-companion
+      env_file:
+        - ./env/proxy.env
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock:ro
+        - certs:/etc/nginx/certs
+        - html:/usr/share/nginx/html
+        - vhost:/etc/nginx/vhost.d
+        - acme:/etc/acme.sh
+      depends_on:
+        - nginx-proxy
+volumes:
+  dbdata:
+  static_volume:
+  certs:
+  html:
+  vhost:
+  acme:

@@ -1,0 +1,11 @@
+**/venv/
+**/*.sqlite3
+*Dockerfile
+docker-compose*.yml
+.git
+.gitignore
+.gitattributes
+.dockerignore
+.idea
+database/
+build/

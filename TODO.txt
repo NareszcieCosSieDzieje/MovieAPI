@@ -1,0 +1,4 @@
+1. ansible
+2. generating an api token after registration
+3. tests
+4. movie models to fix!
