@@ -1,4 +1,4 @@
-# MovieAPI is a Django(3) REST_API project.
+# MovieAPI is a Django(4) REST_API project.
 
 ## Tech stack:
 - nginx | reverse proxy
