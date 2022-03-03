@@ -9,3 +9,5 @@ docker-compose*.yml
 .idea
 database/
 build/
+ansible/
+terraform/
