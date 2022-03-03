@@ -4,7 +4,7 @@ FROM python:3.10.2-bullseye as builder
 LABEL version="1.0"
 LABEL author="Pawel.Kryczka"
 LABEL email="kryczka.pawel.42@gmail.com"
-LABEL description="A Python3.10 Dockerfile for running a Django server"
+LABEL description="A Python3.10.2 Dockerfile for running a Django server"
 
 # BUILD
 RUN apt update
@@ -49,6 +49,8 @@ COPY --from=builder /home/src/app/wheels /wheels
 RUN pip install --no-cache /wheels/*
 
 RUN cp -r /opt/venv/lib/python3.10/site-packages/rest_framework/static/rest_framework $APP_DIR/static/
+RUN cp -r /opt/venv/lib/python3.10/site-packages/django/contrib/gis/static $APP_DIR/static/
+RUN cp -r /opt/venv/lib/python3.10/site-packages/django/contrib/admin/static $APP_DIR/static/
 
 RUN python ./manage.py makemigrations && \
     python ./manage.py migrate
