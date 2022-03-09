@@ -1,0 +1,175 @@
+---
+
+  - name: Setup Debian for Python and Docker
+    hosts: all
+    gather_facts: True
+    become: True
+    become_user: root
+    vars:
+      nproc: 1
+      python_prefix: /usr/local
+      python_version: "3.10.2"
+      python_version_major: "3.10"
+      python_dir: "Python-{{ python_version }}"
+      python_destination: "/tmp/{{ python_dir }}"
+      python_download_destination: "{{ python_destination }}.tgz"
+      github_key_path: "{{ azure_user_home }}/.ssh/github_key"
+    # Old way, left for comparison
+    # vars_prompt:
+    #   - name: github_key_path
+    #     prompt: "What is the absolute path to your github ssh-key? Current val is " # FIXME {{ local_github_key_path }}
+    #     private: no
+    #     unsafe: yes
+    pre_tasks:
+      - name: "Set nproc"
+        shell: |
+          echo $(nproc)
+        tags: nproc
+        register: nproc
+      - name: "Set nproc var"
+        ansible.builtin.set_fact:
+          nproc: "{{ nproc.stdout|int }}"
+        when: nproc is defined and nproc.stdout|int
+        tags: nproc
+      - block:
+        - name: "End playbook if target OS != {{ os }} "
+          ansible.builtin.debug:
+            msg: "Detected OS is {{ ansible_distribution }}"
+        - meta: end_play
+        when: ansible_distribution != 'Debian'
+        tags:
+          - precheck
+      - name: "Get the path of the github key"
+        ansible.builtin.pause:
+          prompt: "What is the absolute path to your github ssh-key? Current val is {{ local_github_key_path }}"
+        register: prompt_key
+        tags:
+          - key_setup
+      - name: "Check if given path exists"
+        ansible.builtin.stat:
+          path: "{{ prompt_key.user_input }}"
+        register: key_stat
+      - name: "Set the new github key value if it the path exists and is a regular file"
+        ansible.builtin.set_fact:
+          local_github_key_path: prompt_key.user_input
+        when: key_stat.stat.isreg is defined and key_stat.stat.isreg # FIXME!
+        tags:
+          - key_setup
+      - name: debug
+        ansible.builtin.debug:
+          msg: "Github key path is {{ local_github_key_path }}"
+        tags:
+          - key_setup
+    tasks:
+      - name: Update Apt
+        ansible.builtin.apt:
+          update_cache: yes
+          upgrade: safe
+          autoclean: yes
+          autoremove: yes
+      # - name: Wait for stuff?? # FIXME
+      #   pause: seconds=5
+      - name: Install Packages
+        ansible.builtin.apt:
+          install_recommends: yes
+          pkg:
+            - sqlite3
+            - git
+      - name: Download and Install Docker-Compose
+        vars:
+          - compose_version: v2.2.3
+          - os: linux
+          - arch: x86_64
+          - source_url: "https://github.com/docker/compose/releases/download/{{ compose_version }}/docker-compose-{{ os }}-{{ arch }}"
+          - destination: /usr/local/bin/
+        ansible.builtin.get_url:
+          url: "{{ source_url }}"
+          dest: "{{ destination }}/docker-compose"
+          owner: "{{ azure_user }}"
+          mode: "0700"
+      - name: Download Dependencies for building Python
+        ansible.builtin.apt:
+            pkg:
+              - make
+              - build-essential
+              - libssl-dev
+              - zlib1g-dev
+              - libbz2-dev
+              - libreadline-dev
+              - libsqlite3-dev
+              - wget
+              - curl
+              - llvm
+              - libncurses5-dev
+              - libncursesw5-dev
+              - xz-utils
+              - tk-dev
+      - name: Download Python Source Code
+        vars:
+          - source_url: "https://www.python.org/ftp/python/{{ python_version }}/{{ python_dir }}.tgz"
+          - source_checksum: 67c92270be6701f4a6fed57c4530139b
+        ansible.builtin.get_url:
+          dest: "{{ python_download_destination }}"
+          url: "{{ source_url }}"
+          checksum: "md5:{{ source_checksum }}"
+          mode: '0700'
+          owner: "{{ azure_user }}"
+      - name: Unarchive Python Source Code
+        ansible.builtin.unarchive:
+          src: "{{ python_download_destination }}"
+          remote_src: yes
+          dest: "/tmp/"
+      - name: Check if Python source code has been already built
+        ansible.builtin.stat:
+          path: "{{ python_prefix}}/bin/python{{ python_version_major }}"
+        register: python_source_stat
+      - name: "Take care of Python Make configuration and Installation"
+        block:
+          - name: Configure Python Make Installation
+            ansible.builtin.shell: |
+              cd {{ python_destination }}
+              ./configure \
+                  --prefix={{ python_prefix }} \
+                  --enable-ipv6 \
+                  --enable-shared \
+                  --with-ensurepip=yes \
+                  --with-lto --enable-optimizations
+          - name: Build and Install Python with Make
+            make:
+              chdir: "{{ python_destination }}"
+              target: altinstall
+              params:
+                NUM_THREADS: "{{ nproc }}"
+        when: python_source_stat.stat.exists is defined and not python_source_stat.stat.exists
+      - name: Upgrade Python Modules
+        ansible.builtin.shell: |
+            ldconfig {{ python_prefix }}/lib 
+            {{ python_prefix }}/bin/python{{ python_version_major }} -m pip install --upgrade pip setuptools wheel
+      # TODO:
+      # - name: Clean Python Build Dir
+      #   rm {{ python_download_destination }}
+      - name: Copy Github SSH key
+        ansible.builtin.copy:
+          src: "{{ local_github_key_path }}{{ item }}"
+          dest: "{{ github_key_path }}{{ item }}"
+          owner: "{{ azure_user }}"
+          mode: '0400'
+        with_items:
+          - ""
+          - ".pub"
+      - name: Setup Env Variables
+        ansible.builtin.blockinfile:
+          path: "{{ azure_user_home }}/.bashrc"
+          # TODO: use a variable?
+          block: |
+            export PYTHONDOCS=/usr/share/doc/python-3/html
+            export LD_LIBRARY_PATH=/lib:/usr/lib:/usr/local/lib
+            eval `ssh-agent -s`
+            ssh-add ~/.ssh/github_key
+      - name: Git clone the project
+        ansible.builtin.git:
+          accept_hostkey: yes
+          repo: "{{ github_ssh_url }}"
+          dest: "{{ project_path }}"
+          version: main
+          key_file: "{{ github_key_path }}"

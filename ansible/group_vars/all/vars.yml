@@ -1,0 +1,6 @@
+---
+
+github_ssh_url: git@github.com:NareszcieCosSieDzieje/MovieAPI.git
+project_dir: movie_api
+local_github_key_path: "{{ vault_local_github_key_path }}" # uses a fingerprint trick
+os: "Debian"

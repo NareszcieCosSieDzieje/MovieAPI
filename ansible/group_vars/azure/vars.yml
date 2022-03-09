@@ -1,1 +1,6 @@
-key: value
+---
+
+azure_user: "{{ vault_azure_user }}"
+azure_user_home: "/home/{{ azure_user }}"
+project_path: "{{ azure_user_home }}/{{ project_dir }}"
+azure_user_password: "{{ vault_azure_password }}"
